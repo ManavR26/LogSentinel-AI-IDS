@@ -1,7 +1,6 @@
 from flask import Flask, render_template_string, redirect, url_for
 import sqlite3
 import os
-# Import our modules
 from db_manager import init_db, import_logs_to_db
 from ai_engine import train_anomaly_detector
 
@@ -13,7 +12,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LogSentinel | AI Defense</title>
+    <title>LogSentinel | Security Dashboard</title>
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -21,146 +20,144 @@ HTML_TEMPLATE = """
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
 
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f8f9fa; color: #2c3e50; }
+        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; color: #1e293b; }
         
-        /* Navbar Styling */
-        .navbar { background-color: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-        .navbar-brand { font-weight: 600; color: #2c3e50 !important; letter-spacing: -0.5px; }
-        .brand-icon { color: #4e73df; }
+        .navbar { background: white; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); padding: 1rem; }
+        .brand-icon { background: linear-gradient(135deg, #6366f1, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 1.5rem; }
+        
+        .card { border: none; border-radius: 16px; background: white; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); transition: all 0.3s ease; }
+        .card:hover { transform: translateY(-5px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        .card-header { background: white; border-bottom: 1px solid #f1f5f9; padding: 1.5rem; border-radius: 16px 16px 0 0 !important; font-weight: 600; }
 
-        /* Card Styling */
-        .card { border: none; border-radius: 12px; box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.1); margin-bottom: 25px; transition: transform 0.2s; }
-        .card:hover { transform: translateY(-2px); }
-        .card-header { background-color: white; border-bottom: 1px solid #f0f2f5; font-weight: 600; border-radius: 12px 12px 0 0 !important; padding: 15px 20px; }
+        .table-responsive { border-radius: 16px; overflow: hidden; }
+        .table { margin-bottom: 0; }
+        .table thead th { background: #f8fafc; color: #64748b; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; border-bottom: none; padding: 1rem; }
+        .table tbody td { padding: 1rem; vertical-align: middle; border-bottom: 1px solid #f1f5f9; }
+        
+        .log-row { transition: background-color 0.2s; cursor: pointer; }
+        .log-row:hover { background-color: #f8fafc; }
+        
+        .badge-risk { padding: 0.5em 1em; border-radius: 9999px; font-weight: 600; font-size: 0.75rem; }
+        .risk-Critical { background-color: #fef2f2; color: #ef4444; border: 1px solid #fecaca; }
+        .risk-High { background-color: #fff7ed; color: #f97316; border: 1px solid #ffedd5; }
+        .risk-Medium { background-color: #fefce8; color: #eab308; border: 1px solid #fef9c3; }
+        
+        .risk-meter { height: 6px; width: 60px; background: #e2e8f0; border-radius: 3px; overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 8px; }
+        .risk-fill { height: 100%; border-radius: 3px; }
+        
+        .endpoint-code { font-family: 'Fira Code', monospace; font-size: 0.85rem; color: #475569; background: #f1f5f9; padding: 4px 8px; border-radius: 6px; border: 1px solid #e2e8f0; }
 
-        /* Status Indicators */
-        .status-dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; }
-        .dot-green { background-color: #1cc88a; box-shadow: 0 0 5px #1cc88a; }
-        .dot-red { background-color: #e74a3b; box-shadow: 0 0 5px #e74a3b; }
-
-        /* Table Styling */
-        .table-hover tbody tr:hover { background-color: #f8f9fc; }
-        .badge-threat { background-color: #e74a3b; color: white; font-size: 0.8rem; padding: 5px 10px; }
-        .code-snippet { font-family: 'Consolas', monospace; color: #e74a3b; background: #fff5f5; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
-
-        /* Button Styling */
-        .btn-primary-custom { background-color: #4e73df; border: none; padding: 10px 20px; font-weight: 600; }
-        .btn-primary-custom:hover { background-color: #2e59d9; }
+        .btn-scan { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 12px; font-weight: 600; box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.39); transition: all 0.2s; }
+        .btn-scan:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(99, 102, 241, 0.23); color: white; }
     </style>
 </head>
 <body>
 
-    <nav class="navbar navbar-expand-lg navbar-light fixed-top">
+    <nav class="navbar fixed-top">
         <div class="container">
-            <a class="navbar-brand" href="#">
-                <i class="fa-solid fa-shield-halved brand-icon"></i> LogSentinel <span class="text-muted fw-light">| AI IDS</span>
+            <a class="navbar-brand fw-bold d-flex align-items-center" href="#">
+                <i class="fa-solid fa-shield-virus me-2" style="font-size: 1.5rem; color: #6366f1;"></i>
+                LogSentinel
             </a>
-            <a href="/scan" class="btn btn-primary-custom btn-sm rounded-pill shadow-sm">
-                <i class="fa-solid fa-rotate"></i> Run New Scan
-            </a>
+            <div class="d-flex align-items-center gap-3">
+                <span class="text-muted small d-none d-md-block"><i class="fa-solid fa-circle-check text-success me-1"></i>System Online</span>
+                <a href="/scan" class="btn-scan text-decoration-none">
+                    <i class="fa-solid fa-radar me-2"></i>Analyze Logs
+                </a>
+            </div>
         </div>
     </nav>
 
-    <div class="container" style="margin-top: 80px;">
+    <div class="container" style="margin-top: 100px; padding-bottom: 50px;">
         
-        <div class="row">
-            <div class="col-md-7">
+        <div class="row mb-4">
+            <div class="col-md-8">
                 <div class="card h-100">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <span><i class="fa-solid fa-chart-pie me-2 text-primary"></i>Traffic Analysis</span>
-                        <span class="badge bg-light text-dark border">Real-Time</span>
+                    <div class="card-header d-flex justify-content-between">
+                        <span>Traffic Analysis</span>
+                        <small class="text-muted">Real-time AI Inference</small>
                     </div>
                     <div class="card-body">
-                        <div style="height: 250px;">
+                        <div style="height: 200px;">
                             <canvas id="threatChart"></canvas>
                         </div>
                     </div>
                 </div>
             </div>
-
-            <div class="col-md-5">
-                <div class="card h-100">
-                    <div class="card-header">
-                        <i class="fa-solid fa-server me-2 text-success"></i>System Health
-                    </div>
-                    <div class="card-body">
-                        <ul class="list-group list-group-flush">
-                            <li class="list-group-item d-flex justify-content-between align-items-center border-0 px-0 pb-0">
-                                Database Connection
-                                <span><span class="status-dot dot-green"></span>Active</span>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center border-0 px-0 pb-0 mt-3">
-                                AI Model Status
-                                <span><span class="status-dot dot-green"></span>IsolationForest Ready</span>
-                            </li>
-                            <hr class="my-4">
-                            <li class="list-group-item d-flex justify-content-between align-items-center border-0 px-0">
-                                Total Requests Scanned
-                                <span class="fw-bold fs-5">{{ total_scanned }}</span>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center border-0 px-0">
-                                High-Risk Threats
-                                <span class="fw-bold fs-5 text-danger">{{ threat_count }}</span>
-                            </li>
-                        </ul>
+            <div class="col-md-4">
+                <div class="card h-100 bg-white">
+                    <div class="card-body d-flex flex-column justify-content-center align-items-center text-center">
+                        <div class="mb-3 p-3 rounded-circle bg-light">
+                            <i class="fa-solid fa-triangle-exclamation text-danger" style="font-size: 2rem;"></i>
+                        </div>
+                        <h2 class="fw-bold mb-0">{{ threat_count }}</h2>
+                        <p class="text-muted mb-0">Threats Detected</p>
+                        <hr class="w-50 my-3">
+                        <small class="text-muted">Database: <strong>sentinel.db</strong></small>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div class="row mt-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header bg-danger text-white">
-                        <i class="fa-solid fa-triangle-exclamation me-2"></i>Detected Anomalies (High Confidence)
-                    </div>
-                    <div class="card-body p-0">
-                        {% if threats %}
-                        <div class="table-responsive">
-                            <table class="table table-hover align-middle mb-0">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th class="ps-4">Time</th>
-                                        <th>Source IP</th>
-                                        <th>Attack Vector (Endpoint)</th>
-                                        <th>HTTP Status</th>
-                                        <th>Risk Level</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for log in threats %}
-                                    <tr>
-                                        <td class="ps-4 text-muted small">{{ log[1] }}</td>
-                                        <td class="fw-bold text-dark">{{ log[2] }}</td>
-                                        <td><span class="code-snippet">{{ log[3] }}</span></td>
-                                        <td>
-                                            {% if log[4] == 200 %}
-                                            <span class="badge bg-warning text-dark">200 (Bypassed)</span>
-                                            {% else %}
-                                            <span class="badge bg-secondary">{{ log[4] }} (Blocked)</span>
-                                            {% endif %}
-                                        </td>
-                                        <td><span class="badge badge-threat rounded-pill">CRITICAL</span></td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                        {% else %}
-                        <div class="text-center p-5">
-                            <i class="fa-regular fa-circle-check fa-3x text-success mb-3"></i>
-                            <p class="h5">No active threats detected.</p>
-                            <p class="text-muted">Your system is clean.</p>
-                        </div>
-                        {% endif %}
-                    </div>
+        <div class="card">
+            <div class="card-header bg-white">
+                <i class="fa-solid fa-list-ul me-2 text-primary"></i>Recent Security Alerts
+            </div>
+            <div class="card-body p-0">
+                {% if threats %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th class="ps-4">Detected At</th>
+                                <th>Source IP</th>
+                                <th>Target Endpoint</th>
+                                <th>Severity</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for log in threats %}
+                            <tr class="log-row" title="Click for details">
+                                <td class="ps-4 text-muted small">{{ log[1] }}</td>
+                                <td class="fw-bold">{{ log[2] }}</td>
+                                <td>
+                                    <div class="endpoint-code">{{ log[3] }}</div>
+                                </td>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        {% if log[6] == 'Critical' %}
+                                            <div class="risk-meter"><div class="risk-fill" style="width: 100%; background: #ef4444;"></div></div>
+                                            <span class="badge-risk risk-Critical">CRITICAL</span>
+                                        {% elif log[6] == 'High' %}
+                                            <div class="risk-meter"><div class="risk-fill" style="width: 70%; background: #f97316;"></div></div>
+                                            <span class="badge-risk risk-High">HIGH</span>
+                                        {% else %}
+                                            <div class="risk-meter"><div class="risk-fill" style="width: 40%; background: #eab308;"></div></div>
+                                            <span class="badge-risk risk-Medium">MEDIUM</span>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                                <td>
+                                    {% if log[4] == 200 %}
+                                        <i class="fa-solid fa-circle-exclamation text-warning" title="Request allowed by server"></i>
+                                    {% else %}
+                                        <i class="fa-solid fa-shield text-success" title="Blocked (403/404)"></i>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
+                {% else %}
+                <div class="text-center p-5">
+                    <h5 class="text-muted">System Secure</h5>
+                    <p class="small text-muted">No anomalies detected in the current log batch.</p>
+                </div>
+                {% endif %}
             </div>
         </div>
-        
-        <footer class="text-center mt-5 mb-5 text-muted small">
-            <p>LogSentinel AI v1.0 &copy; 2025</p>
-        </footer>
 
     </div>
 
@@ -169,10 +166,10 @@ HTML_TEMPLATE = """
         var myChart = new Chart(ctx, {
             type: 'doughnut',
             data: {
-                labels: ['Safe Traffic', 'Threats Detected'],
+                labels: ['Normal Traffic', 'High Risk', 'Medium Risk'],
                 datasets: [{
-                    data: [{{ safe_count }}, {{ threat_count }}],
-                    backgroundColor: ['#1cc88a', '#e74a3b'],
+                    data: [{{ safe_count }}, {{ threat_count }}, 0], 
+                    backgroundColor: ['#e2e8f0', '#ef4444', '#eab308'],
                     borderWidth: 0,
                     hoverOffset: 4
                 }]
@@ -180,14 +177,13 @@ HTML_TEMPLATE = """
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                cutout: '75%',
+                cutout: '80%',
                 plugins: {
-                    legend: { position: 'bottom', labels: { usePointStyle: true, padding: 20 } }
+                    legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 8 } }
                 }
             }
         });
     </script>
-    
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
@@ -198,12 +194,10 @@ def dashboard():
     conn = sqlite3.connect("sentinel.db")
     cursor = conn.cursor()
     
-    #Get the list of threats for the table
+    # Query: Get threats sorted by ID, including the new risk_level column
     cursor.execute("SELECT * FROM logs WHERE is_threat = 1 ORDER BY id DESC")
     threats = cursor.fetchall()
     
-    # Get Counts for the Chart
-    # Handle case where tables might be empty on first run
     try:
         cursor.execute("SELECT COUNT(*) FROM logs WHERE is_threat = 0")
         safe_count = cursor.fetchone()[0]
@@ -235,5 +229,4 @@ def run_full_scan():
     return redirect(url_for('dashboard'))
 
 if __name__ == '__main__':
-    print("Starting LogSentinel Dashboard...")
     app.run(debug=True, port=5000)

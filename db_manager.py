@@ -4,10 +4,10 @@ import os
 DB_NAME = "sentinel.db"
 
 def init_db():
-    """Initialize the SQLite database schema."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     
+    # Updated Schema: Added 'risk_level' column
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -15,7 +15,8 @@ def init_db():
             ip_address TEXT,
             endpoint TEXT,
             status_code INTEGER,
-            is_threat INTEGER DEFAULT 0
+            is_threat INTEGER DEFAULT 0,
+            risk_level TEXT DEFAULT 'Low' 
         )
     ''')
     
@@ -23,7 +24,6 @@ def init_db():
     conn.close()
 
 def import_logs_to_db(log_file_path):
-    """Parse raw logs and persist to database."""
     if not os.path.exists(log_file_path):
         return
 
@@ -55,4 +55,3 @@ def import_logs_to_db(log_file_path):
 if __name__ == "__main__":
     init_db()
     import_logs_to_db("server_logs.txt")
-    print("Database synchronization complete.")
